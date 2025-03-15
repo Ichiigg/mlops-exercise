@@ -1,32 +1,122 @@
 name: Model Testing and Version Control
 on:
   pull_request:
-    types: [opened, reopened]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   check_code:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch all history for tag checking
+        ref: ${{ github.head_ref }}  # Check out the PR branch
+    
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.x'
+    
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+    
     - name: Test with pytest
+      id: test
       run: |
         pip install pytest pytest-cov
-        pytest tests.py --doctest-modules --junitxml=junit/test-results.xml --cov=com --cov-report=xml --cov-report=html
-    - name: Tag version if tests pass
+        pytest tests.py --doctest-modules --junitxml=junit/test-results.xml --cov=. --cov-report=xml --cov-report=html
+    
+    - name: Create scripts directory
+      if: success()
+      run: mkdir -p scripts
+    
+    - name: Create version update script
       if: success()
       run: |
-        VERSION=$(python -c "import json; f=open('model_scores.json'); data=json.load(f); print(data[-1]['version'])")
+        cat > scripts/update_version.py << 'EOF'
+        #!/usr/bin/env python
+        import json
+        import sys
+        import os
+        from pathlib import Path
+
+        def update_version(score):
+            """
+            Updates model_scores.json with a new version entry
+            
+            Args:
+                score (float): The current model score
+                
+            Returns:
+                str: The new version number
+            """
+            scores_file = Path('model_scores.json')
+            
+            # Create file if it doesn't exist
+            if not scores_file.exists():
+                with open(scores_file, 'w') as f:
+                    json.dump([{"version": "1.0", "score": float(score)}], f, indent=4)
+                return "1.0"
+            
+            # Read existing data
+            with open(scores_file, 'r') as f:
+                model_scores = json.load(f)
+
+            # Get latest version and increment
+            latest_version = model_scores[-1]['version'].split('.')
+            new_version = f'{latest_version[0]}.{int(latest_version[1]) + 1}'
+
+            # Add new entry
+            model_scores.append({
+                'version': new_version,
+                'score': float(score)
+            })
+
+            # Write back
+            with open(scores_file, 'w') as f:
+                json.dump(model_scores, f, indent=4)
+                
+            return new_version
+
+        if __name__ == "__main__":
+            if len(sys.argv) > 1:
+                score = float(sys.argv[1])
+                new_version = update_version(score)
+                print(new_version)
+            else:
+                print("Please provide a score")
+                sys.exit(1)
+        EOF
+        chmod +x scripts/update_version.py
+    
+    - name: Update version and tag
+      if: success()
+      run: |
+        # Get current model score
+        SCORE=$(python -c "import app; print(app.main())")
+        echo "Current model score: $SCORE"
+        
+        # Update version
+        NEW_VERSION=$(python scripts/update_version.py $SCORE)
+        echo "Updated to version: $NEW_VERSION"
+        
+        # Configure git
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git tag -a "v${VERSION}" -m "Model version ${VERSION}"
-        git push origin "v${VERSION}"
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+        # Commit the updated model_scores.json
+        git add model_scores.json
+        git commit -m "Update model scores to version ${NEW_VERSION} [automated]"
+        
+        # Create and push tag
+        git tag -a "v${NEW_VERSION}" -m "Model version ${NEW_VERSION}"
+        
+        # Push changes
+        git push origin HEAD:${GITHUB_HEAD_REF}
+        git push origin "v${NEW_VERSION}"
