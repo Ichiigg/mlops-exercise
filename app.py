@@ -3,6 +3,7 @@ import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import LabelEncoder
+import os
 
 def load_data(filepath):
     return pd.read_csv(filepath)
@@ -35,6 +36,7 @@ def train_model(X_train, y_train):
     return model
 
 def save_model(model, filepath):
+    os.makedirs('models', exist_ok=True)
     joblib.dump(model, filepath)
 
 def test_model(model, X_test, y_test):

@@ -1,12 +1,15 @@
 import pandas as pd
 import random
 from faker import Faker
+import os
 
 # Initialize Faker
 fake = Faker()
 
 # Define the number of rows
 num_rows = 50
+
+os.makedirs('data', exist_ok=True)
 
 # Generate data
 data = {
