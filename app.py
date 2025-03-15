@@ -2,8 +2,10 @@ import pandas as pd
 import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.pipeline import Pipeline
 import os
+import pickle
 
 def load_data(filepath):
     return pd.read_csv(filepath)
@@ -49,19 +51,29 @@ def main():
     # Preprocess the data
     data = preprocess_data(data)
 
-    # Split the data into training and testing sets
-    X_train, X_test, y_train, y_test = split_data(data, 'Fraudulent')
+    # Create a pipeline with preprocessing and model
+    pipeline = Pipeline([
+        ('scaler', StandardScaler()),
+        ('classifier', LogisticRegression(
+            max_iter=1000,  # Increase iterations
+            random_state=42,
+            class_weight='balanced'  # Handle imbalanced classes
+        ))
+    ])
 
-    # Train the model
-    model = train_model(X_train, y_train)
+    # Split data
+    X_train, X_test, y_train, y_test = train_test_split(
+        data.drop(columns='Fraudulent'), data['Fraudulent'], test_size=0.2, random_state=42, stratify=data['Fraudulent']
+    )
+
+    # Train and evaluate
+    pipeline.fit(X_train, y_train)
+    score = pipeline.score(X_test, y_test)
 
     # Save the model
-    save_model(model, 'models/model.pkl')
+    with open('models/model.pkl', 'wb') as f:
+        pickle.dump(pipeline, f)
 
-    # Test the model
-    score = test_model(model, X_test, y_test)
-    # print score is:
-    print("Model accuracy is: ", score)
     return score
 
 if __name__ == "__main__":
