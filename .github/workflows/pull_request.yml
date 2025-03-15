@@ -1,8 +1,9 @@
+name: Model Testing and Version Control
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, reopened]
 
-jobs: 
+jobs:
   check_code:
     runs-on: ubuntu-latest
     steps:
@@ -19,3 +20,13 @@ jobs:
       run: |
         pip install pytest pytest-cov
         pytest tests.py --doctest-modules --junitxml=junit/test-results.xml --cov=com --cov-report=xml --cov-report=html
+    - name: Tag version if tests pass
+      if: success()
+      run: |
+        VERSION=$(python -c "import json; f=open('model_scores.json'); data=json.load(f); print(data[-1]['version'])")
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git tag -a "v${VERSION}" -m "Model version ${VERSION}"
+        git push origin "v${VERSION}"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
